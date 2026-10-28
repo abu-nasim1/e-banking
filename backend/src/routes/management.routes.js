@@ -502,6 +502,12 @@ router.get('/loans', staffRead, async (req, res) => {
     res.json(applications);
   } catch (error) {
     console.error('Loan applications failed:', error);
+    if (error.code === 'P1000') {
+      return res.status(503).json({ message: 'Database login failed. Check DATABASE_URL in backend/.env against the running PostgreSQL server.' });
+    }
+    if (error.code === 'P2021') {
+      return res.status(503).json({ message: 'Loan storage is not initialized. Run npx prisma db push from the backend folder.' });
+    }
     res.status(500).json({ message: 'Could not load loan applications' });
   }
 });

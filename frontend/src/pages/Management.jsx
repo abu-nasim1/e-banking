@@ -512,7 +512,7 @@ export default function Management() {
                     </article>
                   );
                 })}
-                {!loanApplications.length && <section className="management-panel empty-cell">No loan applications have been submitted.</section>}
+                {!error && !loanApplications.length && <section className="management-panel empty-cell">No loan applications have been submitted.</section>}
               </div>
             </>
           )}

@@ -134,7 +134,7 @@ export default function Loans() {
               {application.reviewedBy && <div><dt>Owner decision</dt><dd>{application.reviewedBy.name}{application.decisionNote ? ` · ${application.decisionNote}` : ''}</dd></div>}
             </dl>
           </article>
-        )) : <div className="box"><p>No loan applications yet.</p></div>}
+        )) : !error && <div className="box"><p>No loan applications yet.</p></div>}
       </section>
     </div>
   );
