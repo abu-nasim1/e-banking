@@ -1,0 +1,13 @@
+const express = require('express'); const cors = require('cors'); require('dotenv').config();
+const app = express();
+app.use(cors()); app.use(express.json());
+app.get('/api/health', (req,res)=>res.json({status:'ok'}));
+app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/accounts', require('./routes/account.routes'));
+app.use('/api/loans', require('./routes/loan.routes'));
+app.use('/api/transfer', require('./routes/transfer.routes'));
+app.use('/api/transactions', require('./routes/transaction.routes'));
+app.use('/api/cards', require('./routes/card.routes'));
+app.use('/api/beneficiaries', require('./routes/beneficiary.routes'));
+app.use('/api/management', require('./routes/management.routes'));
+module.exports = app;

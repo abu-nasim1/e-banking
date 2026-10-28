@@ -1,0 +1,3 @@
+import {useEffect,useState} from 'react'; import api from '../api/axios';
+export default function Cards(){ const [cards,setCards]=useState([]); useEffect(()=>{api.get('/cards/my').then(r=>setCards(r.data))},[]);
+ return <div className="grid">{cards.map(c=><div key={c.id} className={`credit${c.account?.status === 'FROZEN' ? ' account-card-frozen' : ''}`}><p>E-BANK DEBIT</p><h3>{c.cardNumber}</h3><span>Expiry {c.expiry} · {c.account?.status === 'FROZEN' ? 'ACCOUNT DISABLED' : c.status}</span><small>{c.account?.accountNumber}{c.account?.frozenUntil ? ` · until ${new Date(c.account.frozenUntil).toLocaleString()}` : ''}</small>{c.account?.statusReason && <small>{c.account.statusReason}</small>}</div>)}</div>; }

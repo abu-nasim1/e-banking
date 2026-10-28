@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  OWNER
+  MANAGER
+}
+
+enum CustomerApprovalStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  CLOSED
+}
+
+enum AccountType {
+  SAVINGS
+  CURRENT
+}
+
+enum TxType {
+  DEPOSIT
+  WITHDRAW
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum AccountApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LoanApplicationStatus {
+  PENDING_MANAGER
+  PENDING_OWNER
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id            String        @id @default(uuid())
+  name          String
+  email         String        @unique
+  phone         String?
+  password      String
+  role          Role          @default(USER)
+  approvalStatus CustomerApprovalStatus @default(ACTIVE)
+  approvalNote String?
+  approvalReviewedAt DateTime?
+  approvalReviewedById String?
+  approvalReviewedBy User? @relation("CustomerApprovalReviewer", fields: [approvalReviewedById], references: [id], onDelete: SetNull)
+  reviewedCustomerUsers User[] @relation("CustomerApprovalReviewer")
+  closedAt      DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  accounts      Account[]
+  beneficiaries Beneficiary[]
+  applications  AccountApplication[] @relation("AccountApplicant")
+  reviewedApplications AccountApplication[] @relation("AccountApplicationReviewer")
+  loanApplications LoanApplication[] @relation("LoanApplicant")
+  managerReviewedLoans LoanApplication[] @relation("LoanManagerReviewer")
+  ownerReviewedLoans LoanApplication[] @relation("LoanOwnerReviewer")
+  createdAdjustments PayrollAdjustment[] @relation("AdjustmentCreator")
+  approvedAdjustments PayrollAdjustment[] @relation("AdjustmentApprover")
+  auditLogs     AuditLog[] @relation("AuditActor")
+}
+
+model Account {
+  id            String        @id @default(uuid())
+  accountNumber String        @unique
+  type          AccountType   @default(SAVINGS)
+  balance       Decimal       @default(0) @db.Decimal(12, 2)
+  currency      String        @default("BDT")
+  status        String        @default("ACTIVE")
+  frozenUntil   DateTime?
+  statusReason  String?
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+  cards         Card[]
+  application   AccountApplication?
+  loanApplications LoanApplication[]
+  createdAt     DateTime      @default(now())
+}
+
+model Transaction {
+  id           String   @id @default(uuid())
+  type         TxType
+  amount       Decimal  @db.Decimal(12, 2)
+  description  String?
+  balanceAfter Decimal  @db.Decimal(12, 2)
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([accountId, createdAt])
+}
+
+model Card {
+  id         String   @id @default(uuid())
+  cardNumber String   @unique
+  expiry     String
+  status     String   @default("ACTIVE")
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
+
+model Beneficiary {
+  id            String   @id @default(uuid())
+  name          String
+  accountNumber String
+  bankName      String   @default("E-Bank")
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+}
+
+model AccountApplication {
+  id              String                    @id @default(uuid())
+  type            AccountType
+  fullName        String
+  phone           String
+  email           String
+  nid             String
+  dateOfBirth     String
+  address         String
+  occupation      String?
+  nomineeName     String?
+  nomineePhone    String?
+  initialDeposit  Decimal                   @default(0) @db.Decimal(12, 2)
+  status          AccountApplicationStatus  @default(PENDING)
+  decisionNote    String?
+  applicantId     String
+  applicant       User                      @relation("AccountApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  reviewedById    String?
+  reviewedBy      User?                     @relation("AccountApplicationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  accountId       String?                   @unique
+  account         Account?                  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?
+  createdAt       DateTime                  @default(now())
+
+  @@index([status, createdAt])
+  @@index([applicantId, createdAt])
+}
+
+model LoanApplication {
+  id                  String                @id @default(uuid())
+  amount              Decimal               @db.Decimal(12, 2)
+  termMonths          Int
+  purpose             String
+  employment          String
+  monthlyIncome       Decimal               @db.Decimal(12, 2)
+  status              LoanApplicationStatus @default(PENDING_MANAGER)
+  managerNote         String?
+  managerReviewedAt   DateTime?
+  managerReviewedById String?
+  managerReviewedBy   User?                 @relation("LoanManagerReviewer", fields: [managerReviewedById], references: [id], onDelete: SetNull)
+  decisionNote        String?
+  reviewedAt          DateTime?
+  reviewedById        String?
+  reviewedBy          User?                 @relation("LoanOwnerReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  applicantId         String
+  applicant            User                  @relation("LoanApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  accountId           String
+  account             Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt           DateTime              @default(now())
+
+  @@index([status, createdAt])
+  @@index([applicantId, createdAt])
+  @@index([accountId, createdAt])
+}
+
+model Employee {
+  id              String              @id @default(uuid())
+  employeeCode    String              @unique
+  name            String
+  email           String              @unique
+  phone           String?
+  jobTitle        String
+  department      String
+  monthlySalary   Decimal             @db.Decimal(12, 2)
+  performanceScore Int                @default(50)
+  status          String              @default("ACTIVE")
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  adjustments     PayrollAdjustment[]
+}
+
+model PayrollAdjustment {
+  id                 String   @id @default(uuid())
+  employeeId         String
+  employee           Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  amount             Decimal  @db.Decimal(12, 2)
+  reason             String
+  performanceScore   Int
+  payrollPeriod      String
+  createdById        String
+  createdBy          User     @relation("AdjustmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedById       String?
+  approvedBy         User?    @relation("AdjustmentApprover", fields: [approvedById], references: [id], onDelete: Restrict)
+  status             String   @default("PENDING")
+  approvedAt         DateTime?
+  createdAt          DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+  action     String
+  entityType String
+  entityId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+}
