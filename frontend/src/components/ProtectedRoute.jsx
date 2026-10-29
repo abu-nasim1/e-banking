@@ -6,7 +6,7 @@ export default function ProtectedRoute({ children, allowedRoles, redirectTo = '/
 	if (checkingSession) return <div className="auth-loading">Checking account access...</div>;
 	if (!user) return <Navigate to="/login" replace />;
 	if (allowedRoles && !allowedRoles.includes(user.role || 'USER')) {
-		return <Navigate to={redirectTo} replace />;
+		return <Navigate to={user.role === 'EMPLOYEE' ? '/employee' : redirectTo} replace />;
 	}
 	return children;
 }

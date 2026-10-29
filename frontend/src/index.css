@@ -73,7 +73,7 @@
 }
 
 .sidebar-brand h2 {
-  font-size: 19px;
+  font-size: 20px;
 
   margin: 0;
 
@@ -87,7 +87,7 @@
 
   margin-top: 2px;
 
-  font-size: 10px;
+  font-size: 12px;
 
   color: #8fa5c9;
 }
@@ -103,7 +103,7 @@
 }
 
 .sidebar-nav-title {
-  font-size: 10px;
+  font-size: 12px;
 
   color: #6780aa;
 
@@ -128,7 +128,7 @@
 
   text-decoration: none;
 
-  font-size: 13px;
+  font-size: 15px;
 
   font-weight: 500;
 
@@ -199,7 +199,7 @@
 
   font-weight: 700;
 
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .sidebar-user-info {
@@ -209,7 +209,7 @@
 .sidebar-user-info strong {
   display: block;
 
-  font-size: 12px;
+  font-size: 14px;
 
   color: white;
 
@@ -223,7 +223,7 @@
 .sidebar-user-info span {
   display: block;
 
-  font-size: 9px;
+  font-size: 12px;
 
   color: #8298bb;
 
@@ -260,7 +260,7 @@
   border:
     1px solid rgba(239, 68, 68, 0.15);
 
-  font-size: 12px;
+  font-size: 14px;
 
   font-weight: 600;
 
@@ -319,7 +319,7 @@
 }
 
 .mobile-title span {
-  font-size: 11px;
+  font-size: 13px;
 
   color: #94a3b8;
 }
@@ -327,7 +327,7 @@
 .mobile-title h2 {
   margin: 2px 0 0;
 
-  font-size: 18px;
+  font-size: 19px;
 
   color: #0f172a;
 
@@ -382,7 +382,7 @@
 
   background: transparent;
 
-  font-size: 12px;
+  font-size: 14px;
 
   color: #0f172a;
 }
@@ -479,7 +479,7 @@
 .header-user-text strong {
   display: block;
 
-  font-size: 12px;
+  font-size: 14px;
 
   color: #1e293b;
 }
@@ -489,7 +489,7 @@
 
   margin-top: 2px;
 
-  font-size: 9px;
+  font-size: 12px;
 
   color: #94a3b8;
 }

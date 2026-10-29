@@ -7,6 +7,12 @@ module.exports = async (req,res,next)=>{
     const tokenUser = jwt.verify(h.split(' ')[1], process.env.JWT_SECRET);
     const user = await prisma.user.findUnique({where:{id:tokenUser.id},select:{id:true,email:true,role:true,approvalStatus:true,approvalNote:true}});
     if(!user) return res.status(401).json({message:'Account not found'});
+    if(['EMPLOYEE','MANAGER'].includes(user.role)) {
+      const employee = await prisma.employee.findUnique({where:{userId:user.id},select:{status:true}});
+      if((user.role === 'EMPLOYEE' && !employee) || (employee && employee.status !== 'ACTIVE')) {
+        return res.status(403).json({message:'This employee login is inactive. Contact the bank owner.'});
+      }
+    }
     if(user.role === 'USER' && user.approvalStatus !== 'ACTIVE') {
       const message = user.approvalStatus === 'PENDING'
         ? 'Your registration is awaiting bank approval.'

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 
-const STAFF_ROLES = ['OWNER', 'ADMIN', 'MANAGER'];
+const STAFF_ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'EMPLOYEE'];
 
 export default function Login() {
 	const location = useLocation();
@@ -27,8 +27,8 @@ export default function Login() {
 		setErr('');
 		try {
 			const { data } = await api.post('/auth/login', {
-				...f,
-				email: f.email.trim().toLowerCase(),
+				username: f.email.trim().toLowerCase(),
+				password: f.password,
 			});
 			const isStaff = STAFF_ROLES.includes(data.user.role);
 			if ((roleMode === 'staff') !== isStaff) {
@@ -39,7 +39,7 @@ export default function Login() {
 			}
 
 			login(data);
-			nav(data.user.role === 'MANAGER' ? '/management/employees' : isStaff ? '/management' : '/');
+			nav(data.user.role === 'EMPLOYEE' ? '/employee' : data.user.role === 'MANAGER' ? '/management/employees' : isStaff ? '/management' : '/');
 		} catch (error) {
 			setErr(error.response?.data?.message || 'Login failed');
 		}
@@ -70,13 +70,13 @@ export default function Login() {
 				{err && <p className="err" role="alert">{err}</p>}
 				{roleMode === 'staff' && (
 					<p className="staff-login-note">
-						Owner and manager accounts are pre-created by the bank owner. Use your assigned staff credentials.
+						Use the username and password assigned by your bank owner.
 					</p>
 				)}
 				<input
-					type="email"
+					type="text"
 					autoComplete="username"
-					placeholder="Email address"
+					placeholder="Username or email"
 					value={f.email}
 					onChange={(e) => setF({ ...f, email: e.target.value })}
 					required

@@ -10,4 +10,5 @@ app.use('/api/transactions', require('./routes/transaction.routes'));
 app.use('/api/cards', require('./routes/card.routes'));
 app.use('/api/beneficiaries', require('./routes/beneficiary.routes'));
 app.use('/api/management', require('./routes/management.routes'));
+app.use('/api/employee', require('./routes/employee.routes'));
 module.exports = app;

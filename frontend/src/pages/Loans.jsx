@@ -16,6 +16,7 @@ const statusLabel = (status) => ({
   PENDING_MANAGER: 'Awaiting manager review',
   PENDING_OWNER: 'Awaiting owner approval',
   APPROVED: 'Approved',
+  PAID: 'Paid in full',
   REJECTED: 'Rejected',
 }[status] || status);
 
@@ -27,6 +28,7 @@ export default function Loans() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [paymentAmounts, setPaymentAmounts] = useState({});
 
   const load = async () => {
     try {
@@ -79,9 +81,40 @@ export default function Loans() {
     }
   };
 
+  const payLoan = async (application, mode) => {
+    const nextInstallment = application.installments?.find((installment) => Number(installment.paidAmount) < Number(installment.amount));
+    const amount = mode === 'installment'
+      ? nextInstallment && Number(nextInstallment.amount) - Number(nextInstallment.paidAmount)
+      : Number(paymentAmounts[application.id]);
+    if (mode !== 'full' && (!Number.isFinite(amount) || amount <= 0)) {
+      setError('Enter a valid repayment amount.');
+      return;
+    }
+    if (mode === 'full' && !window.confirm(`Pay the full outstanding balance of ${currency(Number(application.amount) - Number(application.repaidAmount || 0))}?`)) return;
+
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const { data } = await api.post(`/loans/${application.id}/payments`, mode === 'full'
+        ? { fullSettlement: true }
+        : { amount });
+      setPaymentAmounts((current) => ({ ...current, [application.id]: '' }));
+      setNotice(data.status === 'PAID'
+        ? 'Loan paid in full. Your account balance has been updated.'
+        : 'Loan repayment recorded. Your next due amount and date are updated.');
+      await load();
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Could not process loan repayment');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) return <div className="box"><p>Loading loan information...</p></div>;
 
   const hasPendingApplication = applications.some((application) => ['PENDING_MANAGER', 'PENDING_OWNER'].includes(application.status));
+  const hasOpenLoan = applications.some((application) => application.status === 'APPROVED' && application.disbursedAt);
 
   return (
     <div className="loan-page">
@@ -103,7 +136,7 @@ export default function Loans() {
 
       <section className="box loan-form-panel">
         <div className="loan-section-heading"><HandCoins size={21} /><div><h2>Apply for a loan</h2><p>Your information will be reviewed by bank staff.</p></div></div>
-        {accounts.length && !hasPendingApplication ? (
+        {accounts.length && !hasPendingApplication && !hasOpenLoan ? (
           <form onSubmit={submitApplication} className="loan-form">
             <label>Disbursement account<select name="accountId" value={form.accountId} onChange={updateForm} required>{accounts.map((account) => <option key={account.id} value={account.id}>{account.type} · {account.accountNumber}</option>)}</select></label>
             <label>Loan amount<input name="amount" type="number" min="0.01" max="9999999999.99" step="0.01" value={form.amount} onChange={updateForm} required /></label>
@@ -115,6 +148,8 @@ export default function Loans() {
           </form>
         ) : hasPendingApplication ? (
           <p className="loan-form-notice">You already have an application under review. Wait for a decision before applying again.</p>
+        ) : hasOpenLoan ? (
+          <p className="loan-form-notice">You have an active loan. Repay or settle it before applying for another loan.</p>
         ) : (
           <p className="loan-form-notice">You need an active bank account before you can apply for a loan.</p>
         )}
@@ -127,12 +162,35 @@ export default function Loans() {
             <div className="loan-application-heading"><div><span className="eyebrow">Submitted {new Date(application.createdAt).toLocaleDateString()}</span><h3>{currency(application.amount)} · {application.termMonths} months</h3></div><span className={`status-tag ${application.status.toLowerCase()}`}>{statusLabel(application.status)}</span></div>
             <dl className="application-details">
               <div><dt>Account</dt><dd>{application.account.accountNumber}</dd></div>
+              {application.disbursedAt && <div><dt>Disbursed</dt><dd>{new Date(application.disbursedAt).toLocaleDateString()}</dd></div>}
+              {application.disbursedAt && <div><dt>Principal repaid</dt><dd>{currency(application.repaidAmount)}</dd></div>}
+              {application.disbursedAt && <div><dt>Outstanding balance</dt><dd>{currency(Math.max(0, Number(application.amount) - Number(application.repaidAmount || 0)))}</dd></div>}
               <div><dt>Monthly income</dt><dd>{currency(application.monthlyIncome)}</dd></div>
               <div><dt>Employment</dt><dd>{application.employment}</dd></div>
               <div><dt>Purpose</dt><dd>{application.purpose}</dd></div>
               {application.managerReviewedBy && <div><dt>Manager review</dt><dd>{application.managerReviewedBy.name}{application.managerNote ? ` · ${application.managerNote}` : ''}</dd></div>}
               {application.reviewedBy && <div><dt>Owner decision</dt><dd>{application.reviewedBy.name}{application.decisionNote ? ` · ${application.decisionNote}` : ''}</dd></div>}
             </dl>
+            {application.status === 'APPROVED' && !application.disbursedAt && <p className="loan-form-notice">This loan was approved before automatic disbursement and repayment scheduling were enabled. Contact the bank for assistance.</p>}
+            {application.status === 'APPROVED' && application.disbursedAt && (() => {
+              const nextInstallment = application.installments?.find((installment) => Number(installment.paidAmount) < Number(installment.amount));
+              const outstanding = Math.max(0, Number(application.amount) - Number(application.repaidAmount || 0));
+              return <section className="loan-repayment-panel">
+                <div><strong>Next payment</strong><span>{nextInstallment ? `${currency(Number(nextInstallment.amount) - Number(nextInstallment.paidAmount))} due ${new Date(nextInstallment.dueDate).toLocaleDateString()}` : 'No installment due'}</span></div>
+                <form className="loan-payment-form" onSubmit={(event) => { event.preventDefault(); payLoan(application, 'custom'); }}>
+                  <label>Repayment amount<input type="number" min="0.01" max={outstanding} step="0.01" value={paymentAmounts[application.id] || ''} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [application.id]: event.target.value }))} required /></label>
+                  <button type="submit" disabled={busy}>Pay amount</button>
+                </form>
+                <div className="loan-payment-actions">
+                  {nextInstallment && <button type="button" className="secondary-action" disabled={busy} onClick={() => payLoan(application, 'installment')}>Pay next installment</button>}
+                  <button type="button" className="button-danger" disabled={busy} onClick={() => payLoan(application, 'full')}>Settle full balance · {currency(outstanding)}</button>
+                </div>
+                <details className="loan-schedule-details"><summary>Installment schedule and payment history</summary>
+                  <div className="loan-installment-list">{(application.installments || []).map((installment) => <div key={installment.id}><span>#{installment.installmentNumber} · Due {new Date(installment.dueDate).toLocaleDateString()}</span><strong>{currency(installment.paidAmount)} / {currency(installment.amount)}</strong><span className={`status-tag ${installment.status.toLowerCase()}`}>{installment.status}</span></div>)}</div>
+                  {!!application.repayments?.length && <div className="loan-repayment-history"><strong>Recent payments</strong>{application.repayments.map((repayment) => <div key={repayment.id}><span>{new Date(repayment.createdAt).toLocaleString()} · {repayment.paymentType.replace('_', ' ')}</span><strong>{currency(repayment.amount)}</strong></div>)}</div>}
+                </details>
+              </section>;
+            })()}
           </article>
         )) : !error && <div className="box"><p>No loan applications yet.</p></div>}
       </section>

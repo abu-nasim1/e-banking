@@ -3,6 +3,7 @@ import api from '../api/axios';
 
 export default function Accounts() {
   const [accs, setAccs] = useState([]);
+  const [loans, setLoans] = useState([]);
   const [applications, setApplications] = useState([]);
   const [amt, setAmt] = useState({});
   const [err, setErr] = useState('');
@@ -47,8 +48,12 @@ export default function Accounts() {
   const load = async () => {
     try {
       setErr('');
-      const r = await api.get('/accounts/my');
-      setAccs(Array.isArray(r.data) ? r.data : []);
+      const [accountResponse, loanResponse] = await Promise.all([
+        api.get('/accounts/my'),
+        api.get('/loans/my'),
+      ]);
+      setAccs(Array.isArray(accountResponse.data) ? accountResponse.data : []);
+      setLoans(Array.isArray(loanResponse.data) ? loanResponse.data : []);
     } catch (e) {
       showError(e, 'Account load korte parini');
     } finally {
@@ -564,6 +569,19 @@ export default function Accounts() {
             <h2>
               ৳ {Number(a.balance).toLocaleString()}
             </h2>
+
+            {loans.some((loan) => loan.accountId === a.id && loan.status === 'APPROVED' && loan.disbursedAt && Number(loan.amount) > Number(loan.repaidAmount || 0)) && <section className="account-loan-status">
+              <h4>Loan status</h4>
+              {loans.filter((loan) => loan.accountId === a.id && loan.status === 'APPROVED' && loan.disbursedAt && Number(loan.amount) > Number(loan.repaidAmount || 0)).map((loan) => {
+                const outstanding = Math.max(0, Number(loan.amount) - Number(loan.repaidAmount || 0));
+                const nextInstallment = loan.installments?.find((installment) => Number(installment.paidAmount) < Number(installment.amount));
+                return <div className="account-loan-summary" key={loan.id}>
+                  <strong>{loan.termMonths}-month loan</strong>
+                  <span>Outstanding: ৳{outstanding.toLocaleString()}</span>
+                  {nextInstallment && <span>Next due: ৳{(Number(nextInstallment.amount) - Number(nextInstallment.paidAmount)).toLocaleString()} · {new Date(nextInstallment.dueDate).toLocaleDateString()}</span>}
+                </div>;
+              })}
+            </section>}
 
             <label htmlFor={`amount-${a.id}`}>Transaction amount (minimum ৳500)</label>
             <input

@@ -13,10 +13,16 @@ router.post('/register', async(req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({message:'Server error'}); }
 });
 router.post('/login', async(req,res)=>{
-  const {email,password}=req.body;
-  const normalizedEmail = String(email || '').trim().toLowerCase();
-  const user = await prisma.user.findUnique({where:{email:normalizedEmail}});
+  const {username,password}=req.body;
+  const loginName = String(username || req.body.email || '').trim().toLowerCase();
+  const user = await prisma.user.findFirst({where:{OR:[{email:loginName},{username:loginName}]}});
   if(!user || !(await bcrypt.compare(password, user.password))) return res.status(400).json({message:'Invalid email or password'});
+  if (['EMPLOYEE', 'MANAGER'].includes(user.role)) {
+    const employee = await prisma.employee.findUnique({where:{userId:user.id}, select:{status:true}});
+    if ((user.role === 'EMPLOYEE' && !employee) || (employee && employee.status !== 'ACTIVE')) {
+      return res.status(403).json({message:'This employee login is inactive. Contact the bank owner.'});
+    }
+  }
   if (user.role === 'USER' && user.approvalStatus === 'CLOSED') {
     return res.status(403).json({code:'ACCOUNT_CLOSED',message:'This customer account is closed. Contact the bank if you need help.'});
   }
@@ -26,10 +32,10 @@ router.post('/login', async(req,res)=>{
   if (user.role === 'USER' && user.approvalStatus === 'REJECTED') {
     return res.status(403).json({code:'ACCOUNT_REJECTED',message:user.approvalNote ? `Your registration was not approved: ${user.approvalNote}` : 'Your registration was not approved. Contact the bank for more information.'});
   }
-  res.json({ token:sign(user), user:{id:user.id,name:user.name,email:user.email,role:user.role,approvalStatus:user.approvalStatus} });
+  res.json({ token:sign(user), user:{id:user.id,name:user.name,email:user.email,username:user.username,role:user.role,approvalStatus:user.approvalStatus} });
 });
 router.get('/me', auth, async(req,res)=>{
-  const user = await prisma.user.findUnique({where:{id:req.user.id}, select:{id:true,name:true,email:true,phone:true,role:true,approvalStatus:true,closedAt:true,createdAt:true}});
+  const user = await prisma.user.findUnique({where:{id:req.user.id}, select:{id:true,name:true,email:true,username:true,phone:true,role:true,approvalStatus:true,closedAt:true,createdAt:true}});
   res.json(user);
 });
 router.delete('/me', auth, async(req,res)=>{
@@ -40,11 +46,15 @@ router.delete('/me', auth, async(req,res)=>{
         where:{id:req.user.id},
         data:{approvalStatus:'CLOSED',closedAt:new Date()},
       });
+      await tx.account.updateMany({
+        where:{userId:req.user.id},
+        data:{status:'CLOSED',frozenUntil:null,statusReason:'Customer profile closed'},
+      });
       await tx.auditLog.create({data:{
         actorId:req.user.id,
         action:'CUSTOMER_ACCOUNT_CLOSED',
         entityType:'User',
-        details:{customerDataRetained:true},
+        details:{customerDataRetained:true,linkedAccountsClosed:true},
       }});
     });
     res.json({message:'Your account has been closed. Bank records have been retained.'});

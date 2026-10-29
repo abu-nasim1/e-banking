@@ -12,6 +12,7 @@ enum Role {
   ADMIN
   OWNER
   MANAGER
+  EMPLOYEE
 }
 
 enum CustomerApprovalStatus {
@@ -31,6 +32,8 @@ enum TxType {
   WITHDRAW
   TRANSFER_IN
   TRANSFER_OUT
+  LOAN_DISBURSEMENT
+  LOAN_REPAYMENT
 }
 
 enum AccountApplicationStatus {
@@ -43,6 +46,7 @@ enum LoanApplicationStatus {
   PENDING_MANAGER
   PENDING_OWNER
   APPROVED
+  PAID
   REJECTED
 }
 
@@ -51,6 +55,7 @@ model User {
   name          String
   email         String        @unique
   phone         String?
+  username      String?       @unique
   password      String
   role          Role          @default(USER)
   approvalStatus CustomerApprovalStatus @default(ACTIVE)
@@ -72,6 +77,7 @@ model User {
   createdAdjustments PayrollAdjustment[] @relation("AdjustmentCreator")
   approvedAdjustments PayrollAdjustment[] @relation("AdjustmentApprover")
   auditLogs     AuditLog[] @relation("AuditActor")
+  employeeProfile Employee?
 }
 
 model Account {
@@ -100,6 +106,7 @@ model Transaction {
   balanceAfter Decimal  @db.Decimal(12, 2)
   accountId    String
   account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  loanRepayment LoanRepayment?
   createdAt    DateTime @default(now())
 
   @@index([accountId, createdAt])
@@ -161,6 +168,8 @@ model LoanApplication {
   employment          String
   monthlyIncome       Decimal               @db.Decimal(12, 2)
   status              LoanApplicationStatus @default(PENDING_MANAGER)
+  disbursedAt         DateTime?
+  repaidAmount        Decimal               @default(0) @db.Decimal(12, 2)
   managerNote         String?
   managerReviewedAt   DateTime?
   managerReviewedById String?
@@ -173,6 +182,8 @@ model LoanApplication {
   applicant            User                  @relation("LoanApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
   accountId           String
   account             Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  installments        LoanInstallment[]
+  repayments          LoanRepayment[]
   createdAt           DateTime              @default(now())
 
   @@index([status, createdAt])
@@ -180,8 +191,39 @@ model LoanApplication {
   @@index([accountId, createdAt])
 }
 
+model LoanInstallment {
+  id                String          @id @default(uuid())
+  loanApplicationId String
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+  installmentNumber Int
+  dueDate           DateTime
+  amount            Decimal         @db.Decimal(12, 2)
+  paidAmount        Decimal         @default(0) @db.Decimal(12, 2)
+  paidAt            DateTime?
+  status            String          @default("PENDING")
+  createdAt         DateTime        @default(now())
+
+  @@unique([loanApplicationId, installmentNumber])
+  @@index([loanApplicationId, status, dueDate])
+}
+
+model LoanRepayment {
+  id                String          @id @default(uuid())
+  loanApplicationId String
+  loanApplication   LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+  transactionId     String          @unique
+  transaction       Transaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  amount            Decimal         @db.Decimal(12, 2)
+  paymentType       String
+  createdAt         DateTime        @default(now())
+
+  @@index([loanApplicationId, createdAt])
+}
+
 model Employee {
   id              String              @id @default(uuid())
+  userId          String?             @unique
+  user            User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
   employeeCode    String              @unique
   name            String
   email           String              @unique
@@ -191,6 +233,8 @@ model Employee {
   monthlySalary   Decimal             @db.Decimal(12, 2)
   performanceScore Int                @default(50)
   status          String              @default("ACTIVE")
+  terminatedAt    DateTime?
+  statusBeforeTermination String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   adjustments     PayrollAdjustment[]

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
+  Archive,
   BadgeDollarSign,
   Building2,
   ClipboardList,
@@ -27,6 +28,9 @@ const emptyEmployee = {
   employeeCode: '',
   name: '',
   email: '',
+  username: '',
+  password: '',
+  role: 'EMPLOYEE',
   phone: '',
   jobTitle: '',
   department: '',
@@ -38,6 +42,7 @@ const navItems = [
   { id: 'overview', label: 'Overview', path: '/management', icon: LayoutDashboard },
   { id: 'employees', label: 'Employees', path: '/management/employees', icon: Users },
   { id: 'customer-approvals', label: 'Customer approvals', path: '/management/customer-approvals', icon: UserCheck },
+  { id: 'closed-customers', label: 'Closed customers', path: '/management/closed-customers', icon: Archive },
   { id: 'accounts', label: 'Customer accounts', path: '/management/accounts', icon: WalletCards },
   { id: 'applications', label: 'Applications', path: '/management/applications', icon: ClipboardCheck },
   { id: 'loans', label: 'Loan review', path: '/management/loans', icon: HandCoins },
@@ -57,6 +62,8 @@ export default function Management() {
     ? 'employees'
     : location.pathname.endsWith('/customer-approvals')
       ? 'customer-approvals'
+    : location.pathname.endsWith('/closed-customers')
+      ? 'closed-customers'
     : location.pathname.endsWith('/accounts')
       ? 'accounts'
       : location.pathname.endsWith('/applications')
@@ -80,6 +87,7 @@ export default function Management() {
   const [applications, setApplications] = useState([]);
   const [loanApplications, setLoanApplications] = useState([]);
   const [registrations, setRegistrations] = useState([]);
+  const [closedCustomers, setClosedCustomers] = useState([]);
   const [registrationNotes, setRegistrationNotes] = useState({});
   const [applicationNotes, setApplicationNotes] = useState({});
   const [loanNotes, setLoanNotes] = useState({});
@@ -122,6 +130,7 @@ export default function Management() {
     if (section === 'applications') requests.push(api.get('/management/applications').then(({ data }) => active && setApplications(data)));
     if (section === 'loans') requests.push(api.get('/management/loans').then(({ data }) => active && setLoanApplications(data)));
     if (section === 'customer-approvals') requests.push(api.get('/management/customer-registrations').then(({ data }) => active && setRegistrations(data)));
+    if (section === 'closed-customers') requests.push(api.get('/management/closed-customers').then(({ data }) => active && setClosedCustomers(data)));
     if (isOwner && section === 'audit') requests.push(api.get('/management/audit-logs').then(({ data }) => active && setAuditLogs(data)));
     if (isOwner && section === 'payroll' && selectedEmployee) {
       requests.push(api.get(`/management/employees/${selectedEmployee}/adjustments`).then(({ data }) => active && setAdjustments(data)));
@@ -149,6 +158,9 @@ export default function Management() {
       employeeCode: employee.employeeCode,
       name: employee.name,
       email: employee.email,
+      username: employee.user?.username || '',
+      password: '',
+      role: employee.user?.role || 'EMPLOYEE',
       phone: employee.phone || '',
       jobTitle: employee.jobTitle,
       department: employee.department,
@@ -168,12 +180,13 @@ export default function Management() {
     setNotice('');
     try {
       if (editingEmployee) {
-        const { employeeCode, ...updates } = employeeForm;
+        const { employeeCode, password, ...updates } = employeeForm;
+        if (password) updates.password = password;
         await api.patch(`/management/employees/${editingEmployee}`, updates);
-        setNotice('Employee record updated.');
+        setNotice('Employee record and login settings updated.');
       } else {
         await api.post('/management/employees', employeeForm);
-        setNotice('Employee added to the directory.');
+        setNotice('Employee profile and login account created.');
       }
       setShowEmployeeForm(false);
       setEditingEmployee('');
@@ -181,6 +194,47 @@ export default function Management() {
       setEmployees(data);
     } catch (e) {
       setError(e.response?.data?.message || 'Could not save employee');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const terminateEmployee = async (employee) => {
+    const withdrawing = employee.status === 'TERMINATED';
+    const confirmed = window.confirm(withdrawing
+      ? `Withdraw ${employee.name}'s termination? Their previous status will be restored and login access will return only if that status was active.`
+      : `Terminate ${employee.name}? Their login and all employee portal access will be disabled immediately.`);
+    if (!confirmed) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await api.post(`/management/employees/${employee.id}/terminate`);
+      const { data } = await api.get('/management/employees', { params: { search } });
+      setEmployees(data);
+      setNotice(withdrawing
+        ? `${employee.name}'s termination was withdrawn. Previous status restored: ${employee.statusBeforeTermination || 'ACTIVE'}.`
+        : `${employee.name} was terminated. Their login access is disabled.`);
+    } catch (e) {
+      setError(e.response?.data?.message || `Could not ${withdrawing ? 'withdraw termination' : 'terminate employee'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const permanentlyRemoveEmployee = async (employee) => {
+    const confirmed = window.confirm(`Permanently delete ${employee.name} and all linked login, employee, and payroll data? This cannot be undone.`);
+    if (!confirmed) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await api.delete(`/management/employees/${employee.id}/permanent`);
+      const { data } = await api.get('/management/employees', { params: { search } });
+      setEmployees(data);
+      setNotice(`${employee.name} and linked employee data were permanently deleted.`);
+    } catch (e) {
+      setError(e.response?.data?.message || 'Could not permanently delete employee data');
     } finally {
       setBusy(false);
     }
@@ -348,8 +402,12 @@ export default function Management() {
     setNotice('');
     try {
       await api.delete(`/management/customers/${registration.id}/permanent`);
-      const { data } = await api.get('/management/customer-registrations');
-      setRegistrations(data);
+      const [registrationResult, closedResult] = await Promise.all([
+        api.get('/management/customer-registrations'),
+        api.get('/management/closed-customers'),
+      ]);
+      setRegistrations(registrationResult.data);
+      setClosedCustomers(closedResult.data);
       setNotice('Customer and linked data were permanently removed. The action is recorded in the audit history.');
     } catch (e) {
       setError(e.response?.data?.message || 'Could not permanently remove customer data');
@@ -365,6 +423,8 @@ export default function Management() {
 
   const currentTitle = navItems.find((item) => item.id === section)?.label || 'Overview';
   const currentEmployee = employees.find((employee) => employee.id === selectedEmployee);
+  const editingEmployeeRecord = employees.find((employee) => employee.id === editingEmployee);
+  const activeRegistrations = registrations.filter((registration) => registration.approvalStatus !== 'CLOSED');
 
   return (
     <div className="management-shell">
@@ -418,6 +478,9 @@ export default function Management() {
                   {!editingEmployee && <label>Employee code<input name="employeeCode" value={employeeForm.employeeCode} onChange={updateEmployeeForm} required /></label>}
                   <label>Full name<input name="name" value={employeeForm.name} onChange={updateEmployeeForm} required /></label>
                   <label>Work email<input type="email" name="email" value={employeeForm.email} onChange={updateEmployeeForm} required /></label>
+                  <label>Login username<input name="username" value={employeeForm.username} onChange={updateEmployeeForm} autoComplete="username" minLength="3" maxLength="32" pattern="[A-Za-z0-9._-]+" required={!editingEmployee || !editingEmployeeRecord?.user?.id} /></label>
+                  <label>{editingEmployee ? 'New password (optional)' : 'Login password'}<input type="password" name="password" value={employeeForm.password} onChange={updateEmployeeForm} autoComplete="new-password" minLength="8" required={!editingEmployee || !editingEmployeeRecord?.user?.id} placeholder={editingEmployee && editingEmployeeRecord?.user?.id ? 'Leave blank to keep current password' : 'At least 8 characters'} /></label>
+                  <label>Portal role<select name="role" value={employeeForm.role} onChange={updateEmployeeForm}><option value="EMPLOYEE">Employee</option><option value="MANAGER">Manager</option></select></label>
                   <label>Phone<input name="phone" value={employeeForm.phone} onChange={updateEmployeeForm} /></label>
                   <label>Job title<input name="jobTitle" value={employeeForm.jobTitle} onChange={updateEmployeeForm} required /></label>
                   <label>Department<input name="department" value={employeeForm.department} onChange={updateEmployeeForm} required /></label>
@@ -428,7 +491,7 @@ export default function Management() {
                 <button type="submit" disabled={busy}>{busy ? 'Saving...' : editingEmployee ? 'Save employee' : 'Create employee'}</button>
               </form>}
               <section className="management-panel"><div className="management-table-wrap"><table className="management-table"><thead><tr><th>Employee</th><th>Department</th><th>Performance</th><th>Status</th>{isOwner && <><th>Monthly salary</th><th>Contact</th><th></th></>}</tr></thead><tbody>
-                {employees.map((employee) => <tr key={employee.id}><td><strong>{employee.name}</strong><small>{employee.employeeCode} · {employee.jobTitle}</small></td><td>{employee.department}</td><td><div className="score-meter"><span style={{ width: `${employee.performanceScore}%` }} /> </div><small>{employee.performanceScore}/100</small></td><td><span className={`status-tag ${employee.status.toLowerCase()}`}>{employee.status.replace('_', ' ')}</span></td>{isOwner && <><td>{currency(employee.monthlySalary)}</td><td><strong>{employee.email}</strong><small>{employee.phone || 'No phone'}</small></td><td><button className="table-action" onClick={() => startEditEmployee(employee)}>Edit</button></td></>}</tr>)}
+                {employees.map((employee) => <tr key={employee.id}><td><strong>{employee.name}</strong><small>{employee.employeeCode} · {employee.jobTitle}</small></td><td>{employee.department}</td><td><div className="score-meter"><span style={{ width: `${employee.performanceScore}%` }} /> </div><small>{employee.performanceScore}/100</small></td><td><span className={`status-tag ${employee.status === 'TERMINATED' ? 'inactive' : employee.status.toLowerCase()}`}>{employee.status.replace('_', ' ')}</span>{employee.terminatedAt && <small>{new Date(employee.terminatedAt).toLocaleDateString()}</small>}</td>{isOwner && <><td>{currency(employee.monthlySalary)}</td><td><strong>{employee.email}</strong><small>{employee.phone || 'No phone'}</small><small>{employee.user?.username ? `${employee.user.username} · ${employee.user.role}` : 'No login account'}</small></td><td><div className="account-access-controls">{employee.status === 'TERMINATED' ? <><button className="table-action" type="button" disabled={busy} onClick={() => terminateEmployee(employee)}>Withdraw termination</button><button className="button-danger" type="button" disabled={busy} onClick={() => permanentlyRemoveEmployee(employee)}>Delete permanently</button></> : <><button className="table-action" type="button" onClick={() => startEditEmployee(employee)}>Edit</button><button className="button-danger" type="button" disabled={busy} onClick={() => terminateEmployee(employee)}>Terminate</button></>}</div></td></>}</tr>)}
                 {!employees.length && <tr><td colSpan={isOwner ? 7 : 4} className="empty-cell">No employee records found. Add employees to start the directory.</td></tr>}
               </tbody></table></div></section>
             </>
@@ -436,16 +499,36 @@ export default function Management() {
 
           {section === 'customer-approvals' && (
             <>
-              <div className="management-page-intro"><div><h2>Customer registrations</h2><p>Approve access before a new customer can sign in or request an account.</p></div><span className="status-tag pending">{registrations.filter((registration) => registration.approvalStatus === 'PENDING').length} pending</span></div>
+              <div className="management-page-intro"><div><h2>Customer registrations</h2><p>Approve access before a new customer can sign in or request an account.</p></div><span className="status-tag pending">{activeRegistrations.filter((registration) => registration.approvalStatus === 'PENDING').length} pending</span></div>
               <div className="registration-list">
-                {registrations.map((registration) => (
+                {activeRegistrations.map((registration) => (
                   <article className="management-panel registration-card" key={registration.id}>
                     <div className="registration-card-heading"><div><span className="eyebrow">Registered {new Date(registration.createdAt).toLocaleString()}</span><h2>{registration.name}</h2><p>{registration.email}{registration.phone ? ` · ${registration.phone}` : ''}</p></div><span className={`status-tag ${registration.approvalStatus.toLowerCase()}`}>{registration.approvalStatus}</span></div>
                     {registration.approvalStatus === 'PENDING' ? <div className="registration-review-actions"><label>Review note (optional)<input value={registrationNotes[registration.id] || ''} onChange={(event) => setRegistrationNotes((current) => ({ ...current, [registration.id]: event.target.value }))} placeholder="Optional note for rejection" maxLength="300" /></label><div><button type="button" disabled={busy} onClick={() => decideRegistration(registration, 'APPROVED')}>Approve access</button><button type="button" className="button-danger" disabled={busy} onClick={() => decideRegistration(registration, 'REJECTED')}>Reject</button></div></div> : <p className="application-reviewer">Reviewed by {registration.approvalReviewedBy?.name || 'Bank staff'} · {registration.approvalNote || registration.approvalStatus}</p>}
                     {isOwner && <div className="registration-delete-actions"><button type="button" className="button-danger" disabled={busy} onClick={() => permanentlyRemoveCustomer(registration)}>Permanently remove customer and all data</button></div>}
                   </article>
                 ))}
-                {!registrations.length && <section className="management-panel empty-cell">No customer registrations yet.</section>}
+                {!activeRegistrations.length && <section className="management-panel empty-cell">No customer registrations yet.</section>}
+              </div>
+            </>
+          )}
+
+          {section === 'closed-customers' && (
+            <>
+              <div className="management-page-intro"><div><h2>Closed customer records</h2><p>Customer and bank records retained after the customer closed access.</p></div><span>{closedCustomers.length} customers</span></div>
+              <div className="registration-list">
+                {closedCustomers.map((customer) => (
+                  <article className="management-panel registration-card" key={customer.id}>
+                    <div className="registration-card-heading"><div><span className="eyebrow">Registered {new Date(customer.createdAt).toLocaleString()}</span><h2>{customer.name}</h2><p>{customer.email}{customer.phone ? ` · ${customer.phone}` : ''}</p></div><span className="status-tag closed">CLOSED</span></div>
+                    <dl className="application-details">
+                      <div><dt>Closed</dt><dd>{customer.closedAt ? new Date(customer.closedAt).toLocaleString() : 'Date not recorded'}</dd></div>
+                      <div><dt>Bank accounts</dt><dd>{customer.accounts.length ? customer.accounts.map((account) => <p key={account.id}>{account.accountNumber} · {account.type} · {currency(account.balance)} · {account.status}</p>) : 'No bank accounts'}</dd></div>
+                    </dl>
+                    {!!customer.applications.length && <details className="closed-customer-details"><summary>Account applications ({customer.applications.length})</summary>{customer.applications.map((application) => <dl className="application-details" key={application.id}><div><dt>Application</dt><dd>{application.type} · {application.status} · {new Date(application.createdAt).toLocaleDateString()}</dd></div><div><dt>Applicant</dt><dd>{application.fullName} · {application.email} · {application.phone}</dd></div><div><dt>Date of birth / NID</dt><dd>{application.dateOfBirth} · {application.nid}</dd></div><div><dt>Address</dt><dd>{application.address}</dd></div><div><dt>Occupation</dt><dd>{application.occupation || 'Not provided'}</dd></div><div><dt>Nominee</dt><dd>{application.nomineeName ? `${application.nomineeName}${application.nomineePhone ? ` · ${application.nomineePhone}` : ''}` : 'Not provided'}</dd></div><div><dt>Initial deposit</dt><dd>{currency(application.initialDeposit)}</dd></div>{application.decisionNote && <div><dt>Review note</dt><dd>{application.decisionNote}</dd></div>}</dl>)}</details>}
+                    {isOwner && <div className="registration-delete-actions"><button type="button" className="button-danger" disabled={busy} onClick={() => permanentlyRemoveCustomer(customer)}>Permanently remove customer and all data</button></div>}
+                  </article>
+                ))}
+                {!closedCustomers.length && <section className="management-panel empty-cell">No closed customer records.</section>}
               </div>
             </>
           )}
@@ -539,7 +622,31 @@ export default function Management() {
             </>
           )}
 
-          {section === 'audit' && isOwner && <section className="management-panel"><div className="management-panel-heading"><div><h2>Administrative audit history</h2><p>Owner actions are recorded with timestamp and entity reference.</p></div><ShieldCheck size={20} /></div><div className="management-table-wrap"><table className="management-table"><thead><tr><th>Action</th><th>Entity</th><th>Actor</th><th>Details</th><th>Time</th></tr></thead><tbody>{auditLogs.map((log) => <tr key={log.id}><td><span className="status-tag">{log.action.replaceAll('_', ' ')}</span></td><td>{log.entityType}<small>{log.entityId || '—'}</small></td><td><strong>{log.actor.name}</strong><small>{log.actor.email}</small></td><td>{log.details ? JSON.stringify(log.details) : '—'}</td><td>{new Date(log.createdAt).toLocaleString()}</td></tr>)}{!auditLogs.length && <tr><td colSpan="5" className="empty-cell">No administrative actions have been recorded.</td></tr>}</tbody></table></div></section>}
+          {section === 'audit' && isOwner && (
+            <section className="management-panel">
+              <div className="management-panel-heading">
+                <div><h2>Administrative audit history</h2><p>Owner actions are recorded with timestamp and entity reference.</p></div>
+                <ShieldCheck size={20} />
+              </div>
+              <div className="management-table-wrap audit-table-wrap">
+                <table className="management-table audit-table">
+                  <thead><tr><th>Action</th><th>Entity</th><th>Actor</th><th>Details</th><th>Time</th></tr></thead>
+                  <tbody>
+                    {auditLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td><span className="status-tag">{log.action.replaceAll('_', ' ')}</span></td>
+                        <td>{log.entityType}<small>{log.entityId || '—'}</small></td>
+                        <td><strong>{log.actor.name}</strong><small>{log.actor.email}</small></td>
+                        <td>{log.details ? JSON.stringify(log.details) : '—'}</td>
+                        <td>{new Date(log.createdAt).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    {!auditLogs.length && <tr><td colSpan="5" className="empty-cell">No administrative actions have been recorded.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </div>
         {accountActivity && (
           <div className="account-activity-backdrop" onClick={() => setAccountActivity(null)}>
